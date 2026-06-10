@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FF POS - 스마트 관리 시스템</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background: #f8f9fa; margin: 0; padding: 0; color: #333; overflow-x: hidden; }
+        header { background: white; padding: 15px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 100; }
+        .menu-toggle { background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 5px 10px; color: #555; }
+        .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: white; box-shadow: 5px 0 15px rgba(0,0,0,0.1); transition: 0.3s ease; z-index: 1001; padding-top: 20px; }
+        .sidebar.active { left: 0; }
+        .sidebar-item { width: 90%; margin: 5px auto; padding: 15px; border: none; border-radius: 10px; background: transparent; text-align: left; font-size: 1rem; color: #555; cursor: pointer; display: flex; align-items: center; }
+        .sidebar-item.active { background: #e7f1ff; color: #007bff; font-weight: bold; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; }
+        .overlay.active { display: block; }
+        .container { padding: 20px; max-width: 600px; margin: auto; }
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #007bff; margin-bottom: 20px; display: none; background: black; }
+        .page-section { display: none; }
+        .page-section.active { display: block; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #f1f1f1; }
+        th { background: #f8f9fa; font-size: 0.8rem; color: #777; }
+        .alert-card { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        #finalizeBtn { width: 100%; padding: 18px; background: #28a745; color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: bold; margin-top: 15px; cursor: pointer; }
+        #finalizeBtn:disabled { background: #ccc; cursor: default; }
+    </style>
+</head>
+<body>
+    <header>
+        <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+        <div style="margin-left:10px; font-weight:bold;">🏪 FF POS 관리</div>
+    </header>
+
+    <div id="sidebar" class="sidebar">
+        <div style="padding: 20px; font-weight: bold; color: #007bff; border-bottom: 1px solid #eee; margin-bottom: 10px;">메뉴</div>
+        <button id="inspectModeBtn" class="sidebar-item active" onclick="setMode('inspect')">📦 입고 검수</button>
+        <button id="inventoryModeBtn" class="sidebar-item" onclick="setMode('inventory')">📋 전체 재고 현황</button>
+        <button id="saleModeBtn" class="sidebar-item" onclick="setMode('sale')">💰 상품 판매 (POS)</button>
+        <button id="alertModeBtn" class="sidebar-item" onclick="setMode('alert')">⏰ 폐기 상품 확인</button>
+        <button id="analysisModeBtn" class="sidebar-item" onclick="setMode('analysis')">📊 판매 실적 리포트</button>
+    </div>
+
+    <div id="overlay" class="overlay" onclick="toggleSidebar()"></div>
+
+    <div class="container">
+        <div id="reader"></div>
+
+        <div id="inspectSection" class="page-section active">
+            <h3>📋 입고 검수 목록</h3>
+            <table>
+                <thead><tr><th>상품명</th><th>발주</th><th>실제</th></tr></thead>
+                <tbody id="inspectList"></tbody>
+            </table>
+            <button id="finalizeBtn" disabled>검수 완료 및 DB 저장</button>
+        </div>
+
+        <div id="inventorySection" class="page-section">
+            <h3 style="text-align: center; color: #28a745;">📦 현재 매장 재고 목록</h3>
+            <table>
+                <thead><tr><th>상품명</th><th>유통기한</th><th>수량</th></tr></thead>
+                <tbody id="inventoryList"></tbody>
+            </table>
+        </div>
+
+        <div id="alertSectionPage" class="page-section">
+            <h3 style="text-align: center; color: #ff4757;">⏰ 실시간 폐기 대상</h3>
+            <div id="alertListPage"></div>
+        </div>
+
+        <div id="analysisSection" class="page-section">
+            <h3 style="text-align: center; color: #007bff;">📊 일일 실적 및 AI 발주 추천</h3>
+            
+            <!-- 스마트 발주 추천/경고 영역 -->
+            <div id="recommendationAlerts" style="margin-bottom: 20px;"></div>
+
+            <!-- 날짜 선택기 -->
+            <div style="text-align: center; margin-bottom: 20px; font-weight: bold; color: #555;">
+                📅 날짜 선택: <input type="text" id="analysisDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem; width: 150px; text-align: center;">
+            </div>
+
+            <!-- 당일 총 매출액 카드 -->
+            <div style="background: white; border-radius: 10px; padding: 15px; margin-bottom: 20px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 5px solid #007bff;">
+                <div style="font-size: 0.9rem; color: #777;">당일 총 매출액 (할인 적용가)</div>
+                <div id="totalRevenueDisplay" style="font-size: 1.5rem; font-weight: bold; color: #28a745; margin-top: 5px;">0원</div>
+            </div>
+
+            <!-- 차트 영역 -->
+            <div style="background: white; border-radius: 10px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <canvas id="barChart"></canvas>
+            </div>
+            <div style="background: white; border-radius: 10px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <canvas id="pieChart"></canvas>
+            </div>
+
+            <h4 style="text-align: center; color: #555;">상세 데이터</h4>
+            <table>
+                <thead><tr><th>상품명</th><th>총 입고</th><th>판매</th><th>폐기</th><th>매출액</th></tr></thead>
+                <tbody id="analysisList"></tbody>
+            </table>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
